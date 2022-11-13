@@ -5,12 +5,15 @@ import numpy as np
 import cv2
 import matplotlib.pyplot as plt
 
-BASE = "http://127.0.0.1:5000/"
+BASE = "http://192.168.1.5:5000/"
 CANNY = 'canny'
 SEGMENTED = 'segmented'
 HOUGH = 'hough'
 
 im = open('jpgimage.jpg','rb').read()
+print(type(im))
+
+# http://192.168.1.5:5000/casnny
 
 response = requests.post(BASE + '/raahi/' + CANNY, files = {'image' : im})
 # print("STATUS CODE")

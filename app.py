@@ -1,8 +1,10 @@
-from flask import Flask, request,render_template
+from flask import Flask, request,render_template, send_file
 from flask_restful import Api,Resource
 import cv2
 import numpy as np
 from PIL import Image
+import io
+import base64
 
 CANNY = 'canny'
 SEGMENTED = 'segmented'
@@ -20,7 +22,6 @@ class Raahi(Resource):
         gray = cv2.cvtColor(image,cv2.COLOR_RGB2GRAY) #convert the image to grayscale
         blur = cv2.GaussianBlur(gray,(11,11),0)       #apply gaussian blur to remove noise
         canny = cv2.Canny(blur,50,150)                #canny edge detector to find edges (minThreshold,maxThreshold)
-        print('canny')
         return canny
 
     def segmentation(self,image):
@@ -53,28 +54,43 @@ class Raahi(Resource):
         print(request.form)
         return 'donzoes'
     
-    def post(self,routine):
-        print(routine)
+    def post(self,routine): 
+        file = request.files['image']
+        image = Image.open(file)
+        num = np.array(image) 
         try:
             file = request.files['image']
-            img = Image.open(file.stream)
-            num = np.array(img)
+            image = Image.open(file)
+            num = np.array(image)
+
         except: 
+            print('fail here')
             return 'Failed to get image', 400
         
         canny_image = self.canny(num)
         if routine == CANNY:
-            return canny_image.tolist(), 200
+            cv2.imwrite('file.jpeg',canny_image)
+            img = Image.open('file.jpeg','r')
+            img_byte_arr = io.BytesIO()
+            img.save(img_byte_arr, format='PNG')
+            my_encoded_img = base64.b64encode(img_byte_arr.getvalue()).decode('ascii')
+            print(my_encoded_img)
+            return my_encoded_img, 200
+
         houghLines, masked_image = self.segmentation(canny_image)
 
         if routine == SEGMENTED:
+            cv2.imshow('resp',masked_image)
+            cv2.waitKey(0)
             return masked_image.tolist(), 200
 
         line_image = self.display_lines(num,houghLines)
         overlap_image = cv2.addWeighted(num, 0.8, line_image, 1,1)
+        cv2.imshow('resp',overlap_image)
+        cv2.waitKey(0)
         return overlap_image.tolist(), 200
 
 api.add_resource(Raahi,"/raahi/<string:routine>")
 
 if __name__ == "__main__":
-    app.run(debug=False, host = '0.0.0.0')
+    app.run(debug=True, host = '0.0.0.0')
