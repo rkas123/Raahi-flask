@@ -49,6 +49,14 @@ class Raahi(Resource):
                 x1,y1,x2,y2 = line.reshape(4)
                 cv2.line(line_image,(x1,y1),(x2,y2), (255,0,0),5)
         return line_image
+    
+    def encode_image(self,image):
+        cv2.imwrite('file.jpeg',image)
+        img = Image.open('file.jpeg','r')
+        img_byte_arr = io.BytesIO()
+        img.save(img_byte_arr, format='PNG')
+        my_encoded_img = base64.b64encode(img_byte_arr.getvalue()).decode('ascii')
+        return my_encoded_img
 
     def get(self):
         return 'donzoes'
@@ -67,25 +75,20 @@ class Raahi(Resource):
         
         canny_image = self.canny(num)
         if routine == CANNY:
-            cv2.imwrite('file.jpeg',canny_image)
-            img = Image.open('file.jpeg','r')
-            img_byte_arr = io.BytesIO()
-            img.save(img_byte_arr, format='PNG')
-            my_encoded_img = base64.b64encode(img_byte_arr.getvalue()).decode('ascii')
-            return my_encoded_img, 200
+            return self.encode_image(canny_image), 200
 
         houghLines, masked_image = self.segmentation(canny_image)
 
         if routine == SEGMENTED:
-            cv2.imshow('resp',masked_image)
-            cv2.waitKey(0)
-            return masked_image.tolist(), 200
+            # cv2.imshow('resp',masked_image)
+            # cv2.waitKey(0)
+            return self.encode_image(masked_image), 200
 
         line_image = self.display_lines(num,houghLines)
         overlap_image = cv2.addWeighted(num, 0.8, line_image, 1,1)
-        cv2.imshow('resp',overlap_image)
-        cv2.waitKey(0)
-        return overlap_image.tolist(), 200
+        # cv2.imshow('resp',overlap_image)
+        # cv2.waitKey(0)
+        return self.encode_image(overlap_image), 200
 
 api.add_resource(Raahi,"/raahi/<string:routine>")
 
