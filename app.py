@@ -51,7 +51,6 @@ class Raahi(Resource):
         return line_image
 
     def get(self):
-        print(request.form)
         return 'donzoes'
     
     def post(self,routine): 
@@ -64,7 +63,6 @@ class Raahi(Resource):
             num = np.array(image)
 
         except: 
-            print('fail here')
             return 'Failed to get image', 400
         
         canny_image = self.canny(num)
@@ -74,7 +72,6 @@ class Raahi(Resource):
             img_byte_arr = io.BytesIO()
             img.save(img_byte_arr, format='PNG')
             my_encoded_img = base64.b64encode(img_byte_arr.getvalue()).decode('ascii')
-            print(my_encoded_img)
             return my_encoded_img, 200
 
         houghLines, masked_image = self.segmentation(canny_image)
