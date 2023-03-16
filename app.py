@@ -181,8 +181,8 @@ def depthEstimator(img):
     cv2.imshow('Image', img)
     cv2.imshow('Depth Map', depth_map)
 
-    im = Image.fromarray(depth_map)
-    im.save('depth_map.jpg')
+    # im = Image.fromarray(depth_map)
+    # im.save('depth_map.jpg')
 
     return depth_map
 
