@@ -5,7 +5,7 @@ import numpy as np
 import cv2
 import matplotlib.pyplot as plt
 
-BASE = "http://192.168.1.5:5000/"
+BASE = "http://192.168.43.35:5000/"
 CANNY = 'canny'
 SEGMENTED = 'segmented'
 HOUGH = 'hough'
