@@ -45,6 +45,8 @@ def get_colors(LABELS):
     COLORS = np.random.randint(0, 255, size=(len(LABELS), 3),dtype="uint8")
     return COLORS
 
+
+
 def get_weights(weights_path):
     # derive the paths to the YOLO weights and model configuration
     weightsPath = os.path.sep.join([weights_path])
