@@ -1,4 +1,4 @@
-from flask import Flask, request,render_template, send_file
+from flask import Flask, request, jsonify, make_response
 from flask_restful import Api,Resource
 import cv2
 import numpy as np
@@ -8,12 +8,24 @@ import base64
 import os
 import time
 import torch
+from transformers import AutoTokenizer, AutoModel
+from sklearn.metrics.pairwise import cosine_similarity
 
 CANNY = 'canny'
 SEGMENTED = 'segmented'
 HOUGH = 'hough'
 YOLO = 'yolo'
 DEPTH = 'depth_estimation'
+VOICE = 'voice-assistance'
+
+commands = [
+    "What is in front of me?",
+    "Is there a car?",
+    "Is there a dog?",
+    "Am I walking on the left lane?",
+    "Has the bus arrived?",
+    "Is it safe to move?",
+]
 
 app = Flask(__name__)
 api = Api(app)
@@ -21,6 +33,9 @@ api = Api(app)
 #hyperparameters
 confthres=0.5
 nmsthres=0.1
+MAX_LENGTH = 128
+
+model_name = 'sentence-transformers/bert-base-nli-mean-tokens'
 
 # declaring globally
 labelsPath=""
@@ -189,6 +204,58 @@ def depthEstimator(img):
     return depth_map
 
 
+def getTensor(sentence) :
+    tokens = {'input_ids' : [], 'attention_mask' : []}
+
+    # Tokenize the sentences
+    new_tokens = tokenizer.encode_plus(sentence, max_length=MAX_LENGTH, truncation=True, padding='max_length', return_tensors = 'pt')
+    tokens['input_ids'].append(new_tokens['input_ids'][0])
+    tokens['attention_mask'].append(new_tokens['attention_mask'][0])
+
+    # Note : the shape of tokens is ([1,128]), 128 is the number of tokens
+    tokens['input_ids'] = torch.stack(tokens['input_ids'])
+    tokens['attention_mask'] = torch.stack(tokens['attention_mask'])
+
+    # Send the tokens to BERT Model
+    outputs = model(**tokens)
+    # dimension is ([1,128,768])
+
+    # We extract the last tensor - Contains all the semantic information
+    embeddings = outputs.last_hidden_state
+
+    # Mean Pooling
+    #Only take the contribution of true tokens and 0 contribution for padding tokens
+    attention = tokens['attention_mask']
+
+    # To match the dimensions for valid matrix multiplication
+    mask = attention.unsqueeze(-1).expand(embeddings.shape).float()
+    mask_embeddings = embeddings * mask
+
+    # Take sum of tensor values corresponding each token
+    summed = torch.sum(mask_embeddings, 1)
+
+    # The point of clamping is to prevent any divide by zero errors
+    # All zeroes will be considered as 1e-9
+    counts = torch.clamp(mask.sum(1), min = 1e-9)
+
+    mean_pooled = summed / counts
+    mean_pooled = mean_pooled.detach().numpy()
+    
+    return mean_pooled
+
+def getSimilarSentence(queryString):
+    querySentenceTensor = getTensor(queryString)
+    cosineSimilarity = []
+
+    for tensor in commandTensors:
+        cosineSimilarity.append(cosine_similarity(querySentenceTensor,tensor)[0])
+
+    nparray = np.array(cosineSimilarity)
+    index = np.argmax(nparray)
+
+    return commands[index], str(nparray[index][0])
+
+
 @app.route('/')
 def index():
     return 'Use POST verb to send an image'
@@ -238,6 +305,19 @@ class Raahi(Resource):
         return 'donzoes'
     
     def post(self,routine):
+        if routine == VOICE:
+            queryString = request.form['text']
+
+            if queryString == '' or queryString is None : 
+                return 200
+            
+            sentence, similarity = getSimilarSentence(queryString)
+            print(sentence,similarity)
+            return make_response(jsonify({
+                'command' : sentence,
+                'similarity' : similarity,
+            }), 200)
+
         start = time.time() 
         try:
             file = request.files['image']
@@ -314,10 +394,11 @@ if __name__ == "__main__":
     else:
         transform = midas_transforms.small_transform
 
-    # res=get_predection(image,nets,Lables,Colors)
-    # image=cv2.cvtColor(image,cv2.COLOR_BGR2RGB)
-    # show the output image
-    # cv2.imshow("Image", res)
-    # cv2.waitKey()
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    model = AutoModel.from_pretrained(model_name)
+
+    commandTensors = []
+    for sentence in commands:
+        commandTensors.append(getTensor(sentence))
 
     app.run(debug=True, host = '0.0.0.0')

@@ -63,7 +63,7 @@ def getTensor(sentence) :
     return mean_pooled
 
 
-querySentence = 'All good?'
+querySentence = 'I am scared of animals'
 def func():
     for sentence in commands:
         commandTensors.append(getTensor(sentence))
