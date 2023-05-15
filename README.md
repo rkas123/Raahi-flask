@@ -1,4 +1,4 @@
-# Raahi - Assitive tool for visually impaired
+# Raahi - Assistive tool for visually impaired
 
 Raahi uses Machine learning techinques like -
 
