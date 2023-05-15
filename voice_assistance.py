@@ -11,6 +11,8 @@ commands = [
     "Am I walking on the left lane?",
     "Has the bus arrived?",
     "Is it safe to move?",
+    "Turn on Flash",
+    "Turn off Flash",
 ]
 
 commandTensors = []

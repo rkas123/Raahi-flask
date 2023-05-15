@@ -4,10 +4,6 @@ import time
 import numpy as np
 from PIL import Image
 
-
-# Load a MiDas model for depth estimation
-# model_type = "DPT_Large"     # MiDaS v3 - Large     (highest accuracy, slowest inference speed)
-# model_type = "DPT_Hybrid"   # MiDaS v3 - Hybrid    (medium accuracy, medium inference speed)
 model_type = "MiDaS_small"  # MiDaS v2.1 - Small   (lowest accuracy, highest inference speed)
 
 midas = torch.hub.load("intel-isl/MiDaS", model_type)
@@ -25,15 +21,8 @@ if model_type == "DPT_Large" or model_type == "DPT_Hybrid":
 else:
     transform = midas_transforms.small_transform
 
-def depthEstimation() :
-    img = Image.open('jpgimage.jpg')
-    num = np.array(img)
-    im = Image.fromarray(num)
-    im.save('file.jpeg')
-    # cv2.imshow('image',im)
-    predict(num)
 
-def predict(img):
+def depthEstimator(img):
     start = time.time()
     # img = Image.open('file.jpeg')
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
@@ -54,7 +43,11 @@ def predict(img):
 
     depth_map = prediction.cpu().numpy()
 
+    # print(depth_map)
+
     depth_map = cv2.normalize(depth_map, None, 0, 1, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_64F)
+
+    # print(depth_map.shape)
 
 
     end = time.time()
@@ -65,62 +58,20 @@ def predict(img):
     img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
 
     depth_map = (depth_map*255).astype(np.uint8)
+    # print(depth_map.shape)
+
+    relative_depth_map = np.copy(depth_map)
+
     depth_map = cv2.applyColorMap(depth_map , cv2.COLORMAP_MAGMA)
 
     cv2.putText(img, f'FPS: {int(fps)}', (20,70), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0,255,0), 2)
-    cv2.imshow('Image', img)
-    cv2.imshow('Depth Map', depth_map)
-
     im = Image.fromarray(depth_map)
     im.save('depth_map.jpg')
 
-depthEstimation()
-
-#Open up the video capture from a webcam
-# cap = cv2.VideoCapture(0)
-
-# while cap.isOpened():
-
-#     success, img = cap.read()
-
-#     start = time.time()
-
-#     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-
-#     # Apply input transforms
-#     input_batch = transform(img).to(device)
-
-#     # Prediction and resize to original resolution
-#     with torch.no_grad():
-#         prediction = midas(input_batch)
-
-#         prediction = torch.nn.functional.interpolate(
-#             prediction.unsqueeze(1),
-#             size=img.shape[:2],
-#             mode="bicubic",
-#             align_corners=False,
-#         ).squeeze()
-
-#     depth_map = prediction.cpu().numpy()
-
-#     depth_map = cv2.normalize(depth_map, None, 0, 1, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_64F)
+    return relative_depth_map
 
 
-#     end = time.time()
-#     totalTime = end - start
+# img = Image.open('dog.jpg')
+# num = np.array(img)
 
-#     fps = 1 / totalTime
-
-#     img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
-
-#     depth_map = (depth_map*255).astype(np.uint8)
-#     depth_map = cv2.applyColorMap(depth_map , cv2.COLORMAP_MAGMA)
-
-#     cv2.putText(img, f'FPS: {int(fps)}', (20,70), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0,255,0), 2)
-#     cv2.imshow('Image', img)
-#     cv2.imshow('Depth Map', depth_map)
-
-#     if cv2.waitKey(5) & 0xFF == 27:
-#         break
-
-# cap.release()
+# depthEstimator(num)

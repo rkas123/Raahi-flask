@@ -8,6 +8,7 @@ import base64
 import os
 import time
 import torch
+import depth
 from transformers import AutoTokenizer, AutoModel
 from sklearn.metrics.pairwise import cosine_similarity
 
@@ -17,6 +18,8 @@ HOUGH = 'hough'
 YOLO = 'yolo'
 DEPTH = 'depth_estimation'
 VOICE = 'voice-assistance'
+VOICE_COMMAND = 'voice_command'
+AUTOMATIC = 'automatic'
 
 commands = [
     "What is in front of me?",
@@ -25,7 +28,22 @@ commands = [
     "Am I walking on the left lane?",
     "Has the bus arrived?",
     "Is it safe to move?",
+    "Is there a person ahead of me?",
 ]
+
+required_classes = [
+    "person",
+    "bicycle",
+    "car",
+    "motorbike",
+    "bus",
+    "truck",
+    "bench",
+    "stop sign",
+    "parking meter",
+    "cat",
+    "dog",
+],
 
 app = Flask(__name__)
 api = Api(app)
@@ -105,6 +123,103 @@ def get_predection(image,net,LABELS,COLORS):
     confidences = []
     classIDs = []
 
+    classesPresent = []
+    boundingBoxes = []
+    # loop over each of the layer outputs
+    for output in layerOutputs:
+
+        # loop over each of the detections
+        for detection in output:
+            # extract the class ID and confidence (i.e., probability) of
+            # the current object detection
+            scores = detection[5:]
+            # print(scores)
+            classID = np.argmax(scores)
+            # print(classID)
+            confidence = scores[classID]
+
+
+
+            # filter out weak predictions by ensuring the detected
+            # probability is greater than the minimum probability
+            if confidence > confthres:
+                # scale the bounding box coordinates back relative to the
+                # size of the image, keeping in mind that YOLO actually
+                # returns the center (x, y)-coordinates of the bounding
+                # box followed by the boxes' width and height
+                box = detection[0:4] * np.array([W, H, W, H])
+                (centerX, centerY, width, height) = box.astype("int")
+
+                # use the center (x, y)-coordinates to derive the top and
+                # and left corner of the bounding box
+                x = int(centerX - (width / 2))
+                y = int(centerY - (height / 2))
+
+                # update our list of bounding box coordinates, confidences,
+                # and class IDs
+                boxes.append([x, y, int(width), int(height)])
+                confidences.append(float(confidence))
+                classIDs.append(classID)
+
+    # apply non-maxima suppression to suppress weak, overlapping bounding
+    # boxes
+    idxs = cv2.dnn.NMSBoxes(boxes, confidences, confthres,
+                            nmsthres)
+
+    
+    # ensure at least one detection exists
+    if len(idxs) > 0:
+        # loop over the indexes we are keeping
+        for i in idxs.flatten():
+            # extract the bounding box coordinates
+            (x, y) = (boxes[i][0], boxes[i][1])
+            (w, h) = (boxes[i][2], boxes[i][3])
+
+            # draw a bounding box rectangle and label on the image
+            color = [int(c) for c in COLORS[classIDs[i]]]
+            cv2.rectangle(image, (x, y), (x + w, y + h), color, 2)
+            print(LABELS[classIDs[i]])
+            # print(required_classes)
+            if LABELS[classIDs[i]] in required_classes[0]:
+                print(LABELS[classIDs[i]])
+                boundingBoxes.append(boxes[i])
+                classesPresent.append(LABELS[classIDs[i]])
+            text = "{}: {:.4f}".format(LABELS[classIDs[i]], confidences[i])
+            cv2.putText(image, text, (x, y - 5), cv2.FONT_HERSHEY_SIMPLEX,0.5, color, 2)
+    print('classes present and bounding boxes : ')
+    print(classesPresent,boundingBoxes)
+    
+    return image, classesPresent
+
+def get_predection_for_depth(image,net = nets,LABELS = Lables,COLORS = Colors):
+    result = []
+    H = image.shape[0]
+    W = image.shape[1]
+
+    # determine only the *output* layer names that we need from YOLO
+    ln = net.getLayerNames()
+    ln = [ln[i[0] - 1] for i in net.getUnconnectedOutLayers()]
+
+    # construct a blob from the input image and then perform a forward
+    # pass of the YOLO object detector, giving us our bounding boxes and
+    # associated probabilities
+    blob = cv2.dnn.blobFromImage(image, 1 / 255.0, (416, 416),
+                                 swapRB=True, crop=False)
+    net.setInput(blob)
+    start = time.time()
+    layerOutputs = net.forward(ln)
+    # print(layerOutputs)
+    end = time.time()
+
+    # show timing information on YOLO
+    print("[INFO] YOLO algo took {:.6f} seconds".format(end - start))
+
+    # initialize our lists of detected bounding boxes, confidences, and
+    # class IDs, respectively
+    boxes = []
+    confidences = []
+    classIDs = []
+
     # loop over each of the layer outputs
     for output in layerOutputs:
 
@@ -143,7 +258,7 @@ def get_predection(image,net,LABELS,COLORS):
     # boxes
     idxs = cv2.dnn.NMSBoxes(boxes, confidences, confthres,
                             nmsthres)
-
+    res_coordinates = []
     # ensure at least one detection exists
     if len(idxs) > 0:
         # loop over the indexes we are keeping
@@ -152,12 +267,30 @@ def get_predection(image,net,LABELS,COLORS):
             (x, y) = (boxes[i][0], boxes[i][1])
             (w, h) = (boxes[i][2], boxes[i][3])
 
+
+            curr_coordinates = []
+
+            curr_coordinates.append(x)
+            curr_coordinates.append(y)
+            curr_coordinates.append(w)
+            curr_coordinates.append(h)
+            # print(LABELS[classIDs[i]], type(LABELS[classIDs[i]]))
+            curr_coordinates.append(LABELS[classIDs[i]])
+
+            res_coordinates.append(curr_coordinates)
+
             # draw a bounding box rectangle and label on the image
             color = [int(c) for c in COLORS[classIDs[i]]]
             cv2.rectangle(image, (x, y), (x + w, y + h), color, 2)
             text = "{}: {:.4f}".format(LABELS[classIDs[i]], confidences[i])
             cv2.putText(image, text, (x, y - 5), cv2.FONT_HERSHEY_SIMPLEX,0.5, color, 2)
-    return image
+    result.append(image)
+    result.append(res_coordinates)
+
+    res_image = Image.fromarray(image)
+    res_image.save('yolo.jpg')
+    return result
+
 
 ### Depth Estimation
 #img is numpy array
@@ -203,6 +336,70 @@ def depthEstimator(img):
 
     return depth_map
 
+def depth_esti_with_yolo(num):
+
+    #calling yolo and depth functions
+    res_image, res_coor = get_predection_for_depth(num,nets,Lables,Colors)
+
+    # cv2.imshow('image', res_image)
+    # cv2.waitKey(0)
+    depth_array = depth.depthEstimator(num)
+
+
+    #calculate the coordination of floor
+    x_coor_floor = int(depth_array.shape[0] - 1)
+    y_coor_floor = int(depth_array.shape[1]/2)
+
+    relative_floor_dist = depth_array[x_coor_floor][y_coor_floor]
+
+
+    dist_labels = []
+
+    img = np.copy(depth_array)
+
+    for coor in res_coor:
+
+        x, y, h, w, label = coor
+        
+        x = max(x, 0)
+        y = max(y, 0)
+        x_max = min(x + h, depth_array.shape[0])
+        y_max = min(y + w, depth_array.shape[1])
+
+        # color = [int(c) for c in Colors[label]]
+        cv2.rectangle(img, (x,y), (x+w,y+h), (0,255,0),2)
+        cv2.putText(img,label,(x,y-5), cv2.FONT_HERSHEY_SIMPLEX, 0.5,(0,255,0),2)
+
+        # cv2.imshow('image1',depth_array)
+        # cv2.waitKey(0)
+
+
+        curr_arr = np.copy(depth_array)
+        curr_arr = curr_arr[y:y_max, x:x_max]
+        
+        print('in loop')
+        print(x,y,h,w,label)
+        print(curr_arr)
+        print(depth_array)
+
+        min_dist = np.min(curr_arr)
+        
+        approx_dist = float((float(min_dist)*2.58631376)/float(relative_floor_dist)) #that number is the approx distance from phone to distance in meters
+        
+        dist_labels.append([approx_dist, label])
+        
+    dist_labels.sort()  
+    print('dist_labels')
+    # cv2.imshow('img',img)
+    # cv2.waitKey(0)
+    return dist_labels, img
+                    
+
+# image = Image.open('test1.jpeg')
+# num = np.array(image)
+# res = depth_esti_with_yolo(num)
+
+# print(res)
 
 def getTensor(sentence) :
     tokens = {'input_ids' : [], 'attention_mask' : []}
@@ -304,11 +501,169 @@ class Raahi(Resource):
     def get(self):
         return 'donzoes'
     
+    def list_to_string(self, list):
+        res = ""
+
+        for ele in list:
+            res += ele
+            res += " "
+        
+        return res
+    
+    def voice_assistant(self, command, similarity, classes):
+        if(float(similarity) < 0.5):
+            return make_response(jsonify({
+                'command' : 'No such command',
+            }), 200)
+
+        if command == commands[0]:
+            if len(classes) == 0:
+                return make_response(jsonify({
+                    'command' : 'There is nothing ahead of you.',
+                }), 200)
+            else :
+                return make_response(jsonify({
+                    'command' : 'There is a ' + self.list_to_string(classes) + 'in front of you.'
+                }),200)
+        
+        elif command == commands[1]:
+            if 'car' in classes or 'bus' in classes or 'bicycle' in classes or 'truck' in classes:
+                return make_response(jsonify({
+                'command' : 'Yes, there is a car in your path.',
+            }), 200)
+            else :
+                return make_response(jsonify({
+                'command' : 'No, your path is clear',
+            }), 200)   
+
+        elif command == commands[2] :
+            if 'dog' in classes:
+                return make_response(jsonify({
+                    'command' : 'Yes, there is a dog in your path.',
+                }), 200)
+            else:
+                return make_response(jsonify({
+                    'command' : 'No, your path is clear.',
+                }), 200)
+            
+        elif command == commands[4]:
+            if 'bus' in classes:
+                return make_response(jsonify({
+                    'command' : 'There is a bus in your vision.',
+                }), 200)
+            else:
+                return make_response(jsonify({
+                    'command' : 'No buses in your vicinity.',
+                }), 200)
+            
+        elif command == commands[5]:
+            if len(classes) == 0:
+                return make_response(jsonify({
+                    'command' : 'Yes, you can move',
+                }), 200)
+            else:
+                return make_response(jsonify({
+                    'command' : 'No, there is hindrance in your path.',
+                }), 200)
+        
+        elif command == commands[6]:
+            if 'person' in classes:
+                return make_response(jsonify({
+                    'command' : 'There is a person in your vision.',
+                }), 200)
+            else:
+                return make_response(jsonify({
+                    'command' : 'No one in your vicinity.',
+                }), 200)
+
+
+        return make_response(jsonify({
+            'command' : 'Could not find a command',
+        }), 200)
+
+    def build_text(self, distance, label):
+        if(distance < 0.5):
+            return label + 'close to you '
+        elif (distance < 2):
+            return label + 'slightly far from you '
+        else :
+            return label + 'very far from you '
+    
     def post(self,routine):
+
+        if routine == AUTOMATIC:
+            print('automatic')
+            image = request.files['image'] 
+            img = Image.open(image)
+            num = np.array(img)
+
+            # cv2.imshow('img', num)
+            # cv2.waitKey(0)
+
+            labels, image = depth_esti_with_yolo(num) 
+            print(labels)
+
+            text = '' 
+
+            if(len(labels) == 0) : 
+                return make_response(jsonify({
+                    'text' : '',
+                }), 200)
+            
+            text = 'There is a '
+            length = len(labels)
+
+            if(length == 1):
+                print(labels[0][0])
+                print('second')
+                print(labels[0][1])
+                text += self.build_text(labels[0][0],labels[0][1])
+                return make_response(jsonify({
+                    'text' : text,
+                }), 200)
+            
+            for i in range(0,length - 1):
+                text += self.build_text(labels[i][0],labels[i][1])
+            
+            text += 'and '
+            text += self.build_text(labels[length-1][0],labels[length-1][1])
+            
+            # gray = cv2.cvtColor(image,cv2.COLOR_RGB2GRAY)
+
+            return make_response(jsonify({
+                'text' : text,
+                'image' : self.encode_image(image),
+            }))
+
+
+
+
+        if routine == VOICE_COMMAND:
+
+            image = request.files['image']
+            img = Image.open(image)
+            num = np.array(img)
+
+            # cv2.imshow("img", num)
+            # cv2.waitKey(0)
+            command = request.form['command']
+
+            sentence, similarity = getSimilarSentence(command)
+            print(command, " : ", sentence, " : ", similarity)
+
+            img, classes = get_predection(num,nets,Lables,Colors)
+
+            print(classes)
+            # cv2.imshow('image',img)
+            # cv2.waitKey(0)
+
+            return self.voice_assistant(sentence, similarity, classes)
+
+        
         if routine == VOICE:
             queryString = request.form['text']
-
-            if queryString == '' or queryString is None : 
+            
+            if queryString == '' or queryString is  None : 
                 return 200
             
             sentence, similarity = getSimilarSentence(queryString)
@@ -331,7 +686,7 @@ class Raahi(Resource):
             res = depthEstimator(num)
             return self.encode_image(res), 200
         if routine == YOLO:
-            res = get_predection(num,nets,Lables,Colors)
+            res, _ = get_predection(num,nets,Lables,Colors)
             # cv2.imshow("Image", res)
             # cv2.waitKey()
             end = time.time()
